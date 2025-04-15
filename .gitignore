@@ -1,0 +1,7 @@
+# ----- Ignore IDE & Build tool -----
+.idea
+
+# ----- Ignore develop files -----
+*.fasthttp
+*.fasthttp.*
+
