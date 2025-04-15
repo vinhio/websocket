@@ -20,6 +20,17 @@ type Hub struct {
 	unregister chan *Client
 }
 
+// IsEmpty Check if the hub's client map is empty.
+//
+// Parameters:
+// - None.
+//
+// Logic:
+// 1. Returns true if the clients map is empty, otherwise false.
+func (h *Hub) IsEmpty() bool {
+	return len(h.clients) == 0
+}
+
 func newHub() *Hub {
 	// Creates and returns a new Hub instance.
 	//

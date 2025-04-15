@@ -1,10 +1,46 @@
 package main
 
 import (
-	"github.com/fasthttp/websocket"
+	"github.com/gflydev/core/try"
 	"github.com/valyala/fasthttp"
 	"log"
+	"ws/websocket"
 )
+
+type PoolHub map[string]*Hub
+
+type Manager struct {
+	poolHub PoolHub
+}
+
+func NewManager() *Manager {
+	return &Manager{
+		poolHub: make(PoolHub),
+	}
+}
+
+func (m *Manager) GetHub(id string) *Hub {
+	if hub, ok := m.poolHub[id]; ok {
+		return hub
+	}
+	return nil
+}
+
+func (m *Manager) SetHub(id string, hub *Hub) {
+	if _, ok := m.poolHub[id]; !ok {
+		m.poolHub[id] = hub
+	}
+}
+
+func (m *Manager) DeleteHub(id string) {
+	if hub, ok := m.poolHub[id]; ok {
+		if hub.IsEmpty() {
+			delete(m.poolHub, id)
+		} else {
+			log.Println("Hub is not empty, cannot delete")
+		}
+	}
+}
 
 var upgrader = websocket.FastHTTPUpgrader{
 	ReadBufferSize:  1024,
@@ -61,15 +97,19 @@ func checkOrigin(r *fasthttp.RequestCtx) bool {
 //
 // 3. If an error occurs during the websocket upgrade, it is logged using the `log.Println` function.
 func serveWs(ctx *fasthttp.RequestCtx, hub *Hub) {
-	err := upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
-		client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256)}
-		client.hub.register <- client
+	try.Perform(func() {
+		err := upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
+			client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256)}
+			client.hub.register <- client
 
-		go client.writePump()
-		client.readPump()
+			go client.writePump()
+			client.readPump()
+		})
+
+		if err != nil {
+			log.Println(err)
+		}
+	}).Catch(func(e try.E) {
+		log.Println("Error in goroutine: ", e)
 	})
-
-	if err != nil {
-		log.Println(err)
-	}
 }

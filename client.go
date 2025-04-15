@@ -9,7 +9,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/fasthttp/websocket"
+	"ws/websocket"
 )
 
 const (
@@ -168,6 +168,8 @@ func (c *Client) writePump() {
 	for {
 		select {
 		case message, ok := <-c.send:
+			var err error
+
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				// The hub closed the channel.
