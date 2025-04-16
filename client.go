@@ -1,12 +1,8 @@
-// Copyright 2013 The Gorilla WebSocket Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package main
 
 import (
 	"bytes"
-	"log"
+	"github.com/gflydev/core/log"
 	"time"
 
 	"ws/websocket"
@@ -103,7 +99,7 @@ func (c *Client) readPump() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
+				log.Errorf("Error: %v", err)
 			}
 			break
 		}
@@ -194,7 +190,7 @@ func (c *Client) writePump() {
 				return
 			}
 		case <-ticker.C:
-			log.Println("Ping", c.conn.RemoteAddr())
+			log.Debug("Ping", c.conn.RemoteAddr())
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
@@ -204,13 +200,13 @@ func (c *Client) writePump() {
 }
 
 func (c *Client) pongHandler(string) error {
-	log.Println("Pong", c.conn.RemoteAddr())
+	log.Debug("Pong", c.conn.RemoteAddr())
 
 	// Update the read deadline when a Pong message is received.
 	err := c.conn.SetReadDeadline(time.Now().Add(pongWait))
 
 	if err != nil {
-		log.Println("Error setting read deadline: ", err)
+		log.Error("Error setting read deadline: ", err)
 	}
 
 	return err

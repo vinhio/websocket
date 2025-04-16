@@ -1,8 +1,28 @@
-// Copyright 2013 The Gorilla WebSocket Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
-
 package main
+
+func newHub() *Hub {
+	// Creates and returns a new Hub instance.
+	//
+	// Parameters:
+	// - None.
+	//
+	// Logic:
+	// 1. Initializes and returns a pointer to a new Hub instance.
+	// 2. Sets up the following fields for the Hub instance:
+	//	- broadcast: A channel for receiving inbound messages from clients to be broadcast to other clients.
+	//	- register: A channel for handling client registration requests.
+	//	- unregister: A channel for handling client unregistration requests.
+	//	- clients: A map to manage and store the active clients.
+	//
+	// Returns:
+	// - *Hub: A pointer to a newly created Hub instance.
+	return &Hub{
+		broadcast:  make(chan []byte),
+		register:   make(chan *Client),
+		unregister: make(chan *Client),
+		clients:    make(map[*Client]bool),
+	}
+}
 
 // Hub maintains the set of active clients and broadcasts messages to the
 // clients.
@@ -29,30 +49,6 @@ type Hub struct {
 // 1. Returns true if the clients map is empty, otherwise false.
 func (h *Hub) IsEmpty() bool {
 	return len(h.clients) == 0
-}
-
-func newHub() *Hub {
-	// Creates and returns a new Hub instance.
-	//
-	// Parameters:
-	// - None.
-	//
-	// Logic:
-	// 1. Initializes and returns a pointer to a new Hub instance.
-	// 2. Sets up the following fields for the Hub instance:
-	//	- broadcast: A channel for receiving inbound messages from clients to be broadcast to other clients.
-	//	- register: A channel for handling client registration requests.
-	//	- unregister: A channel for handling client unregistration requests.
-	//	- clients: A map to manage and store the active clients.
-	//
-	// Returns:
-	// - *Hub: A pointer to a newly created Hub instance.
-	return &Hub{
-		broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		clients:    make(map[*Client]bool),
-	}
 }
 
 func (h *Hub) run() {

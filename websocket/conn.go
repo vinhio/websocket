@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"github.com/gflydev/core/try"
 	"io"
 	"net"
 	"strconv"
@@ -414,10 +415,17 @@ func (c *Conn) write(frameType int, deadline time.Time, buf0, buf1 []byte) error
 		return ErrNilNetConn
 	}
 
-	// TODO investigate issue `panic: runtime error: invalid memory address or nil pointer dereference`
-	if err := c.conn.SetWriteDeadline(deadline); err != nil {
+	// Fix issue `panic: runtime error: invalid memory address or nil pointer dereference`
+	try.Perform(func() {
+		err = c.conn.SetWriteDeadline(deadline)
+	}).Catch(func(e try.E) {
+		err = errors.New("websocket: set write deadline failed")
+	})
+
+	if err != nil {
 		return c.writeFatal(err)
 	}
+
 	if len(buf1) == 0 {
 		_, err = c.conn.Write(buf0)
 	} else {
