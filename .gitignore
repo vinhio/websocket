@@ -3,3 +3,5 @@
 
 # ----- Ignore develop and runtime files -----
 storage
+release
+main
