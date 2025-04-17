@@ -14,6 +14,8 @@
         let conn;
         const msg = document.getElementById("msg");
         const log = document.getElementById("log");
+        const channelSelect = document.getElementById("channel");
+        const currentChannel = document.getElementById("currentChannel");
 
         function appendLog(item) {
           const doScroll =
@@ -36,18 +38,32 @@
           return false;
         };
 
-        if (window["WebSocket"]) {
-          conn = new ReconnectingWebSocket("ws://" + document.location.host + "/ws");
+        // Function to connect to a specific channel
+        function connectToChannel(channel) {
+          // Close existing connection if any
+          if (conn) {
+            conn.close();
+          }
+
+          // Update current channel display
+          currentChannel.textContent = channel || "General";
+
+          // Create a new WebSocket connection with the channel parameter
+          const wsUrl = "ws://" + document.location.host + "/ws" + (channel ? "?channel=" + encodeURIComponent(channel) : "");
+          conn = new ReconnectingWebSocket(wsUrl);
+
           conn.onopen = function (evt) {
               const item = document.createElement("div");
-              item.innerHTML = "<b>Connected.</b>";
+              item.innerHTML = "<b>Connected to channel: " + (channel || "General") + "</b>";
               appendLog(item);
           };
+
           conn.onclose = function (evt) {
             const item = document.createElement("div");
             item.innerHTML = "<b>Connection closed.</b>";
             appendLog(item);
           };
+
           conn.onmessage = function (evt) {
             const messages = evt.data.split("\n");
             for (let i = 0; i < messages.length; i++) {
@@ -56,6 +72,69 @@
               appendLog(item);
             }
           };
+        }
+
+        // Handle channel selection change
+        channelSelect.addEventListener("change", function() {
+          const selectedChannel = channelSelect.value;
+          connectToChannel(selectedChannel);
+        });
+
+        // Handle new channel button click
+        document.getElementById("newChannelBtn").addEventListener("click", function() {
+          const channelName = prompt("Enter new channel name:");
+          if (channelName) {
+            // Check if the channel already exists
+            let channelExists = false;
+            for (let i = 0; i < channelSelect.options.length; i++) {
+              if (channelSelect.options[i].value === channelName) {
+                channelExists = true;
+                channelSelect.selectedIndex = i;
+                break;
+              }
+            }
+
+            // If the channel doesn't exist, add it
+            if (!channelExists) {
+              const option = document.createElement("option");
+              option.value = channelName;
+              option.text = channelName;
+              channelSelect.add(option);
+              channelSelect.value = channelName;
+            }
+
+            // Connect to the new channel
+            connectToChannel(channelName);
+          }
+        });
+
+        // Initial connection
+        if (window["WebSocket"]) {
+          // Get channel from URL if present
+          const urlParams = new URLSearchParams(window.location.search);
+          const channelParam = urlParams.get('channel');
+
+          // Set the select value if channel is in URL
+          if (channelParam) {
+            // Check if the channel exists in the dropdown
+            for (let i = 0; i < channelSelect.options.length; i++) {
+              if (channelSelect.options[i].value === channelParam) {
+                channelSelect.selectedIndex = i;
+                break;
+              }
+            }
+            // If not found, add it
+            if (channelSelect.value !== channelParam) {
+              const option = document.createElement("option");
+              option.value = channelParam;
+              option.text = channelParam;
+              channelSelect.add(option);
+              channelSelect.value = channelParam;
+            }
+          }
+
+          // Connect to the selected channel
+          connectToChannel(channelSelect.value);
         } else {
           const item = document.createElement("div");
           item.innerHTML = "<b>Your browser does not support WebSockets.</b>";
@@ -82,11 +161,22 @@
         margin: 0;
         padding: 0.5em 0.5em 0.5em 0.5em;
         position: absolute;
-        top: 0.5em;
+        top: 3.5em; /* Adjusted to make room for the channel selection */
         left: 0.5em;
         right: 0.5em;
         bottom: 3em;
         overflow: auto;
+      }
+
+      #channel-container {
+        position: absolute;
+        top: 0.5em;
+        left: 0.5em;
+        right: 0.5em;
+        background-color: #f0f0f0;
+        padding: 10px;
+        border-radius: 4px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
       }
 
       #form {
@@ -101,6 +191,19 @@
     </style>
   </head>
   <body>
+    <div id="channel-container" style="background-color: #f0f0f0; padding: 10px; margin-bottom: 5px; display: flex; align-items: center;">
+      <label for="channel" style="margin-right: 10px;">Channel:</label>
+      <select id="channel" style="margin-right: 10px; padding: 5px;">
+        <option value="">General</option>
+        <option value="announcements">Announcements</option>
+        <option value="support">Support</option>
+        <option value="random">Random</option>
+      </select>
+      <button id="newChannelBtn" style="margin-right: 10px; padding: 5px;">New Channel</button>
+      <div style="margin-left: auto;">
+        Current Channel: <span id="currentChannel" style="font-weight: bold;">General</span>
+      </div>
+    </div>
     <div id="log"></div>
     <form id="form">
       <input type="submit" value="Send" />

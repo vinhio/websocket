@@ -104,6 +104,11 @@ func (c *Client) readPump() {
 			break
 		}
 		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
+		// Prepend channel name to message if available
+		if c.hub.name != "" {
+			channelPrefix := []byte("[" + c.hub.name + "] ")
+			message = append(channelPrefix, message...)
+		}
 		c.hub.broadcast <- message
 	}
 }

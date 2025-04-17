@@ -43,14 +43,14 @@ func NewManager() *Manager {
 // createDefaultHub creates and initializes the default hub for the manager.
 //
 // This method performs the following steps:
-// 1. Creates a new Hub instance using the `newHub` function.
+// 1. Creates a new Hub instance using the `newHub` function with the name "General".
 // 2. Adds the newly created Hub to the `poolHub` map with the key `DefaultHubID`.
 // 3. Starts the Hub's `run` method in a separate goroutine to handle client connections and messages.
 //
 // Returns:
 // - *Hub: A pointer to the newly created default Hub instance.
 func (m *Manager) createDefaultHub() *Hub {
-	hub := newHub()
+	hub := newHub("General")
 	manager.poolHub[DefaultHubID] = hub
 	go hub.run()
 
@@ -84,6 +84,27 @@ func (m *Manager) SetHub(id string, hub *Hub) {
 	if _, ok := m.poolHub[id]; !ok {
 		m.poolHub[id] = hub
 	}
+}
+
+// CreateChannelHub creates and initializes a new hub for a specific channel.
+//
+// Parameters:
+// - channelID (string): The unique identifier for the channel.
+// - channelName (string): The name of the channel.
+//
+// Logic:
+// 1. Creates a new Hub instance using the `newHub` function with the provided channel name.
+// 2. Adds the newly created Hub to the `poolHub` map with the provided channel ID.
+// 3. Starts the Hub's `run` method in a separate goroutine to handle client connections and messages.
+//
+// Returns:
+// - *Hub: A pointer to the newly created Hub instance.
+func (m *Manager) CreateChannelHub(channelID string, channelName string) *Hub {
+	hub := newHub(channelName)
+	m.poolHub[channelID] = hub
+	go hub.run()
+
+	return hub
 }
 
 // DeleteHub removes a Hub instance from the poolHub map if it is empty.
@@ -177,13 +198,13 @@ func init() {
 // - ctx: The `fasthttp.RequestCtx` representing the current HTTP request context.
 //   - Used for parsing the request and initializing the websocket connection.
 //
-// - hub: Pointer to the `Hub` instance that manages client connections and message broadcasting.
-//
 // Logic:
-// 1. Attempts to upgrade an incoming HTTP request to a websocket connection using the `upgrader.Upgrade` method.
+// 1. Gets the channel parameter from the query string, defaulting to the default hub if not provided.
+// 2. If the channel doesn't exist, creates a new hub for that channel.
+// 3. Attempts to upgrade an incoming HTTP request to a websocket connection using the `upgrader.Upgrade` method.
 //   - If the upgrade fails, logs the error and exits the function.
 //
-// 2. On successful connection upgrade:
+// 4. On successful connection upgrade:
 //
 //   - A new `Client` instance is created:
 //
@@ -201,10 +222,19 @@ func init() {
 //
 //   - `readPump`: Responsible for reading messages from the client.
 //
-// 3. If an error occurs during the websocket upgrade, it is logged using the `log.Println` function.
+// 5. If an error occurs during the websocket upgrade, it is logged using the `log.Println` function.
 func ServeWS(ctx *fasthttp.RequestCtx) {
-	// Get the hub ID from the request URL
-	hub := manager.GetHub(DefaultHubID)
+	// Get the channel parameter from the query string
+	channelID := string(ctx.QueryArgs().Peek("channel"))
+	if channelID == "" {
+		channelID = DefaultHubID
+	}
+
+	// Get the hub for the specified channel, or create a new one if it doesn't exist
+	hub := manager.GetHub(channelID)
+	if hub == nil {
+		hub = manager.CreateChannelHub(channelID, channelID)
+	}
 
 	try.Perform(func() {
 		err := upgrader.Upgrade(ctx, func(conn *websocket.Conn) {

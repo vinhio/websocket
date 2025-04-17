@@ -1,10 +1,10 @@
 package main
 
-func newHub() *Hub {
+func newHub(name string) *Hub {
 	// Creates and returns a new Hub instance.
 	//
 	// Parameters:
-	// - None.
+	// - name (string): The name of the channel/room.
 	//
 	// Logic:
 	// 1. Initializes and returns a pointer to a new Hub instance.
@@ -13,6 +13,7 @@ func newHub() *Hub {
 	//	- register: A channel for handling client registration requests.
 	//	- unregister: A channel for handling client unregistration requests.
 	//	- clients: A map to manage and store the active clients.
+	//	- name: The name of the channel/room.
 	//
 	// Returns:
 	// - *Hub: A pointer to a newly created Hub instance.
@@ -21,6 +22,7 @@ func newHub() *Hub {
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		clients:    make(map[*Client]bool),
+		name:       name,
 	}
 }
 
@@ -38,6 +40,9 @@ type Hub struct {
 
 	// Unregister requests from clients.
 	unregister chan *Client
+
+	// Name of the channel/room
+	name string
 }
 
 // IsEmpty Check if the hub's client map is empty.
