@@ -6,6 +6,8 @@ import (
 	"github.com/gflydev/core/try"
 	"github.com/gflydev/core/utils"
 	"github.com/valyala/fasthttp"
+	"net/url"
+	"strings"
 	"ws/websocket"
 )
 
@@ -135,13 +137,26 @@ var upgrader = websocket.FastHTTPUpgrader{
 
 // checkOrigin will check origin and return true if its allowed
 func checkOrigin(r *fasthttp.RequestCtx) bool {
-
 	// Grab the request origin
-	origin := string(r.Request.Header.Peek("Origin"))
-	var url = utils.Getenv[string]("APP_URL", "")
+	originUrl := string(r.Request.Header.Peek("Origin"))
+	appUrl := utils.Getenv[string]("APP_URL", "")
 
-	switch origin {
-	case url:
+	originInstance, err := url.Parse(originUrl)
+	if err != nil {
+		return false
+	}
+	appInstance, err := url.Parse(appUrl)
+	if err != nil {
+		return false
+	}
+
+	originUrl = strings.TrimPrefix(originInstance.Hostname(), "www.")
+	appUrl = strings.TrimPrefix(appInstance.Hostname(), "www.")
+
+	log.Debug(originUrl, appUrl)
+
+	switch originUrl {
+	case appUrl:
 		return true
 	default:
 		return false
