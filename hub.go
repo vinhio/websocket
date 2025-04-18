@@ -70,10 +70,17 @@ func (h *Hub) run() {
 		case client := <-h.unregister: // Parameter: client (*Client) - A client attempting to disconnect from the hub.
 			// Logic:
 			// - Check if the client exists in the client map.
-			// - If it does, remove it from the map and close its send channel to stop further communication.
+			// - If it does, remove it from the map.
+			// - IMPORTANT: We don't close the send channel here anymore to support channel switching.
+			//   This is a key change that allows clients to switch channels without disconnecting.
+			//   Previously, the send channel was closed here, which would break the WebSocket connection
+			//   when a client switched channels.
+			// - The send channel will be closed in the client's readPump when the connection is actually closed
+			//   (i.e., when the client disconnects from the server, not just when switching channels).
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
-				close(client.send)
+				// Don't close the send channel here to support channel switching
+				// close(client.send) - This would break channel switching
 			}
 		case message := <-h.broadcast: // Parameter: message ([]byte) - A message received from a client to be broadcast to all clients.
 			// Logic:
@@ -83,7 +90,7 @@ func (h *Hub) run() {
 			for client := range h.clients {
 				select {
 				case client.send <- message: // Successfully send the message.
-				default: // Failed to send message (channel full or disconnected).
+				default: // Failed to send a message (channel full or disconnected).
 					close(client.send)
 					delete(h.clients, client)
 				}

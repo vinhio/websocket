@@ -27,7 +27,7 @@ var (
 	space   = []byte{' '}
 )
 
-// Client is a middleman between the websocket connection and the hub.
+// Client is an intermediary between the websocket connection and the hub.
 type Client struct {
 	hub *Hub
 
@@ -36,6 +36,9 @@ type Client struct {
 
 	// Buffered channel of outbound messages.
 	send chan []byte
+
+	// Client ID for tracking across channel switches
+	id string
 }
 
 // readPump pumps messages from the websocket connection to the hub.
@@ -104,12 +107,36 @@ func (c *Client) readPump() {
 			break
 		}
 		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
-		// Prepend channel name to message if available
-		if c.hub.name != "" {
-			channelPrefix := []byte("[" + c.hub.name + "] ")
-			message = append(channelPrefix, message...)
+
+		// Check if this is a channel switch command
+		// Format: "/switch channelID"
+		// This is a special command that allows clients to switch channels without disconnecting
+		// their WebSocket connection. When a client sends this command, the server will move
+		// the client from its current hub to the specified hub, maintaining the WebSocket connection.
+		msgStr := string(message)
+		if len(msgStr) > 8 && msgStr[:8] == "/switch " {
+			channelID := msgStr[8:]
+			log.Infof("Client %s requesting channel switch to %s", c.conn.RemoteAddr(), channelID)
+
+			// Get the hub for the specified channel or create a new one if it doesn't exist
+			hub := manager.GetHub(channelID)
+			if hub == nil {
+				hub = manager.CreateChannelHub(channelID, channelID)
+			}
+
+			// Switch the client to the new channel without closing the WebSocket connection
+			// This is the key part of the implementation that allows clients to switch channels
+			// without disconnecting and reconnecting
+			c.SwitchChannel(hub)
+		} else {
+			// Regular message, broadcast to the current hub
+			// Prepend channel name to message if available
+			if c.hub.name != "" {
+				channelPrefix := []byte("[" + c.hub.name + "] ")
+				message = append(channelPrefix, message...)
+			}
+			c.hub.broadcast <- message
 		}
-		c.hub.broadcast <- message
 	}
 }
 
@@ -215,4 +242,37 @@ func (c *Client) pongHandler(string) error {
 	}
 
 	return err
+}
+
+// SwitchChannel switches the client to a new hub without closing the WebSocket connection.
+// It unregisters the client from its current hub and registers it with the new hub.
+//
+// This method is a key part of the implementation that allows clients to switch channels
+// without disconnecting and reconnecting their WebSocket connection. It maintains the
+// existing connection while changing the hub that the client is associated with.
+//
+// Parameters:
+// - newHub (*Hub): The new hub to register the client with.
+//
+// Logic:
+// 1. Unregister the client from its current hub.
+// 2. Update the client's hub reference to the new hub.
+// 3. Register the client with the new hub.
+func (c *Client) SwitchChannel(newHub *Hub) {
+	if c.hub.name == newHub.name {
+		return // Already in this hub
+	}
+
+	// Unregister from the current hub
+	c.hub.unregister <- c
+
+	// Update hub reference
+	c.hub = newHub
+
+	// Register with a new hub
+	c.hub.register <- c
+
+	// Send a notification to the client about the channel switch
+	message := []byte("Switched to channel: " + c.hub.name)
+	c.send <- message
 }

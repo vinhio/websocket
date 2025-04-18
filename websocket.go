@@ -8,6 +8,7 @@ import (
 	"github.com/valyala/fasthttp"
 	"net/url"
 	"strings"
+	"time"
 	"ws/websocket"
 )
 
@@ -238,7 +239,17 @@ func ServeWS(ctx *fasthttp.RequestCtx) {
 
 	try.Perform(func() {
 		err := upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
-			client := &Client{hub: hub, conn: conn, send: make(chan []byte, 256)}
+			// Generate a unique client ID using the remote address and current time
+			clientID := conn.RemoteAddr().String() + "-" + time.Now().Format(time.RFC3339Nano)
+
+			client := &Client{
+				hub:  hub,
+				conn: conn,
+				send: make(chan []byte, 256),
+				id:   clientID,
+			}
+
+			log.Infof("New client connected: %s to channel: %s", clientID, channelID)
 			client.hub.register <- client
 
 			go client.writePump()

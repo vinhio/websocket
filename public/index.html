@@ -39,39 +39,50 @@
         };
 
         // Function to connect to a specific channel
+        // This function has been improved to maintain the WebSocket connection when switching channels
+        // Instead of closing and reopening the connection, it now sends a channel switch command
+        // to the server, which allows the server to move the client to a different channel
+        // without disconnecting the WebSocket connection.
         function connectToChannel(channel) {
-          // Close existing connection if any
-          if (conn) {
-            conn.close();
-          }
-
           // Update current channel display
           currentChannel.textContent = channel || "General";
 
-          // Create a new WebSocket connection with the channel parameter
-          const wsUrl = "ws://" + document.location.host + "/ws" + (channel ? "?channel=" + encodeURIComponent(channel) : "");
-          conn = new ReconnectingWebSocket(wsUrl);
+          if (!conn || conn.readyState !== WebSocket.OPEN) {
+            // If no connection exists or it's not open, create a new one
+            // This happens on the initial connection or if the connection was closed
+            const wsUrl = "ws://" + document.location.host + "/ws" + (channel ? "?channel=" + encodeURIComponent(channel) : "");
+            conn = new ReconnectingWebSocket(wsUrl);
 
-          conn.onopen = function (evt) {
+            conn.onopen = function (evt) {
+                const item = document.createElement("div");
+                item.innerHTML = "<b>Connected to channel: " + (channel || "General") + "</b>";
+                appendLog(item);
+            };
+
+            conn.onclose = function (evt) {
               const item = document.createElement("div");
-              item.innerHTML = "<b>Connected to channel: " + (channel || "General") + "</b>";
+              item.innerHTML = "<b>Connection closed.</b>";
               appendLog(item);
-          };
+            };
 
-          conn.onclose = function (evt) {
+            conn.onmessage = function (evt) {
+              const messages = evt.data.split("\n");
+              for (let i = 0; i < messages.length; i++) {
+                const item = document.createElement("div");
+                item.innerText = messages[i];
+                appendLog(item);
+              }
+            };
+          } else {
+            // If connection exists and is open, send a channel switch command
+            // This is the key improvement: instead of closing and reopening the connection,
+            // we send a command to the server to switch channels while maintaining the connection
+            conn.send("/switch " + (channel || "default"));
+
             const item = document.createElement("div");
-            item.innerHTML = "<b>Connection closed.</b>";
+            item.innerHTML = "<b>Switching to channel: " + (channel || "General") + "</b>";
             appendLog(item);
-          };
-
-          conn.onmessage = function (evt) {
-            const messages = evt.data.split("\n");
-            for (let i = 0; i < messages.length; i++) {
-              const item = document.createElement("div");
-              item.innerText = messages[i];
-              appendLog(item);
-            }
-          };
+          }
         }
 
         // Handle channel selection change

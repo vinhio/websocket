@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"github.com/gflydev/core/log"
 	"github.com/gflydev/core/try"
 	"io"
 	"net"
@@ -359,7 +360,17 @@ func (c *Conn) LocalAddr() net.Addr {
 	if c == nil || c.conn == nil {
 		return nil
 	}
-	return c.conn.LocalAddr()
+
+	var addr net.Addr
+
+	// Fix issue `panic: runtime error: invalid memory address or nil pointer dereference`
+	try.Perform(func() {
+		addr = c.conn.LocalAddr()
+	}).Catch(func(e try.E) {
+		log.Error(e)
+	})
+
+	return addr
 }
 
 // RemoteAddr returns the remote network address.
@@ -367,7 +378,17 @@ func (c *Conn) RemoteAddr() net.Addr {
 	if c == nil || c.conn == nil {
 		return nil
 	}
-	return c.conn.RemoteAddr()
+
+	var addr net.Addr
+
+	// Fix issue `panic: runtime error: invalid memory address or nil pointer dereference`
+	try.Perform(func() {
+		addr = c.conn.RemoteAddr()
+	}).Catch(func(e try.E) {
+		log.Error(e)
+	})
+
+	return addr
 }
 
 // Write methods
@@ -419,6 +440,8 @@ func (c *Conn) write(frameType int, deadline time.Time, buf0, buf1 []byte) error
 	try.Perform(func() {
 		err = c.conn.SetWriteDeadline(deadline)
 	}).Catch(func(e try.E) {
+		log.Error(e)
+
 		err = errors.New("websocket: set write deadline failed")
 	})
 
