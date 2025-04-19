@@ -9,10 +9,10 @@ import (
 )
 
 const (
-	// Time allowed to write a message to the peer.
+	// Time allowed writing a message to the peer.
 	writeWait = 10 * time.Second
 
-	// Time allowed to read the next pong message from the peer.
+	// Time allowed reading the next pong message from the peer.
 	pongWait = 60 * time.Second
 
 	// Send pings to peer with this period. Must be less than pongWait.
@@ -222,7 +222,10 @@ func (c *Client) writePump() {
 				return
 			}
 		case <-ticker.C:
-			log.Debug("Ping", c.conn.RemoteAddr())
+			// NOTE: Will get the error inside c.conn.RemoteAddr() for everytime the client disconnects
+			// error detail `panic: runtime error: invalid memory address or nil pointer dereference`
+			//log.Debug("Ping", c.conn.RemoteAddr())
+
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
@@ -232,7 +235,9 @@ func (c *Client) writePump() {
 }
 
 func (c *Client) pongHandler(string) error {
-	log.Debug("Pong", c.conn.RemoteAddr())
+	// NOTE: Will get the error inside c.conn.RemoteAddr() for everytime the client disconnects
+	// error detail `panic: runtime error: invalid memory address or nil pointer dereference`
+	//log.Debug("Pong", c.conn.RemoteAddr())
 
 	// Update the read deadline when a Pong message is received.
 	err := c.conn.SetReadDeadline(time.Now().Add(pongWait))

@@ -367,7 +367,7 @@ func (c *Conn) LocalAddr() net.Addr {
 	try.Perform(func() {
 		addr = c.conn.LocalAddr()
 	}).Catch(func(e try.E) {
-		log.Error(e)
+		log.Warn(e)
 	})
 
 	return addr
@@ -385,7 +385,7 @@ func (c *Conn) RemoteAddr() net.Addr {
 	try.Perform(func() {
 		addr = c.conn.RemoteAddr()
 	}).Catch(func(e try.E) {
-		log.Error(e)
+		log.Warn(e)
 	})
 
 	return addr
