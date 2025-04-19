@@ -9,8 +9,10 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"github.com/gflydev/core/log"
 	"github.com/gflydev/core/try"
+	"github.com/vmihailenco/msgpack/v5"
 	"io"
 	"net"
 	"strconv"
@@ -18,6 +20,7 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+	"ws/data"
 )
 
 const (
@@ -35,8 +38,8 @@ const (
 
 	writeWait = time.Second
 
-	defaultReadBufferSize  = 4096
-	defaultWriteBufferSize = 4096
+	defaultReadBufferSize  = 40960
+	defaultWriteBufferSize = 40960
 
 	continuationFrame = 0
 	noFrame           = -1
@@ -367,7 +370,7 @@ func (c *Conn) LocalAddr() net.Addr {
 	try.Perform(func() {
 		addr = c.conn.LocalAddr()
 	}).Catch(func(e try.E) {
-		log.Error(e)
+		log.Warn(e)
 	})
 
 	return addr
@@ -385,7 +388,7 @@ func (c *Conn) RemoteAddr() net.Addr {
 	try.Perform(func() {
 		addr = c.conn.RemoteAddr()
 	}).Catch(func(e try.E) {
-		log.Error(e)
+		log.Warn(e)
 	})
 
 	return addr
@@ -1112,8 +1115,11 @@ func (c *Conn) NextReader() (messageType int, r io.Reader, err error) {
 		}
 
 		if frameType == TextMessage || frameType == BinaryMessage {
+			fmt.Println("c.readLength = ", c.readLength, ", c.readRemaining = ", c.readRemaining, ", frameType = ", frameType)
 			c.messageReader = &messageReader{c}
+			fmt.Println("c.messageReader")
 			c.reader = c.messageReader
+			fmt.Println("c.reader")
 			if c.readDecompress {
 				c.reader = c.newDecompressionReader(c.reader)
 			}
@@ -1143,8 +1149,17 @@ func (r *messageReader) Read(b []byte) (int, error) {
 		return 0, io.EOF
 	}
 
-	for c.readErr == nil {
+	var item data.MessageSend
+	err1 := msgpack.Unmarshal(b, &item)
+	if err1 != nil {
+		panic(err1)
+	}
+	log.Warn("(r *messageReader) Read(b []byte) (int, error) ", item)
 
+	// TODO working
+	log.Warn("(r *messageReader) Read(b []byte) (int, error) ", b)
+
+	for c.readErr == nil {
 		if c.readRemaining > 0 {
 			if int64(len(b)) > c.readRemaining {
 				b = b[:c.readRemaining]
@@ -1199,7 +1214,10 @@ func (c *Conn) ReadMessage() (messageType int, p []byte, err error) {
 	if err != nil {
 		return messageType, nil, err
 	}
+	fmt.Println("ReadMessage begin")
 	p, err = io.ReadAll(r)
+	fmt.Println("ReadMessage done")
+	fmt.Println("Error ", err)
 	return messageType, p, err
 }
 

@@ -151,10 +151,15 @@ func (m *WSHandler) Handle(c *core.Ctx) error {
 // ====================================================================
 
 var upgrader = websocket.FastHTTPUpgrader{
-	ReadBufferSize:  10240,
-	WriteBufferSize: 10240,
+	ReadBufferSize:  0,
+	WriteBufferSize: 0,
 	// Apply the Origin Checker
 	CheckOrigin: checkOrigin,
+	Error:       errorHandler,
+}
+
+func errorHandler(ctx *fasthttp.RequestCtx, status int, reason error) {
+	log.Error(reason)
 }
 
 // checkOrigin will check origin and return true if its allowed

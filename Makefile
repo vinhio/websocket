@@ -18,6 +18,7 @@ release:
 
 	# Upload to server
 	scp build/app-amd64-linux root@jivecode:/root/jivepage/tmp/
+	scp public/index.html root@jivecode:/root/jivepage/public/
 
 	# Restart server
 	ssh root@jivecode 'cd /root/jivepage && ./restart.sh'
