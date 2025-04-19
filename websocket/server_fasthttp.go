@@ -155,7 +155,7 @@ func (u *FastHTTPUpgrader) Upgrade(ctx *fasthttp.RequestCtx, handler FastHTTPHan
 
 	checkOrigin := u.CheckOrigin
 	if checkOrigin == nil {
-		checkOrigin = fastHTTPcheckSameOrigin
+		checkOrigin = fastHTTPCheckSameOrigin
 	}
 	if !checkOrigin(ctx) {
 		return u.responseError(ctx, fasthttp.StatusForbidden, "websocket: request origin not allowed by FastHTTPUpgrader.CheckOrigin")
@@ -206,8 +206,8 @@ func (u *FastHTTPUpgrader) Upgrade(ctx *fasthttp.RequestCtx, handler FastHTTPHan
 	return nil
 }
 
-// fastHTTPcheckSameOrigin returns true if the origin is not set or is equal to the request host.
-func fastHTTPcheckSameOrigin(ctx *fasthttp.RequestCtx) bool {
+// fastHTTPCheckSameOrigin returns true if the origin is not set or is equal to the request host.
+func fastHTTPCheckSameOrigin(ctx *fasthttp.RequestCtx) bool {
 	origin := ctx.Request.Header.Peek("Origin")
 	if len(origin) == 0 {
 		return true

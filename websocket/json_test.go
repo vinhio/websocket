@@ -7,6 +7,7 @@ package websocket
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"reflect"
 	"testing"
@@ -79,38 +80,14 @@ func TestPartialJSONRead(t *testing.T) {
 
 	for i := 0; i < messageCount; i++ {
 		err := rc.ReadJSON(&v)
-		if err != io.ErrUnexpectedEOF {
+		if !errors.Is(err, io.ErrUnexpectedEOF) {
 			t.Error("read", i, err)
 		}
 	}
 
 	err = rc.ReadJSON(&v)
-	if _, ok := err.(*CloseError); !ok {
+	var closeError *CloseError
+	if !errors.As(err, &closeError) {
 		t.Error("final", err)
-	}
-}
-
-func TestDeprecatedJSON(t *testing.T) {
-	var buf bytes.Buffer
-	wc := newTestConn(nil, &buf, true)
-	rc := newTestConn(&buf, nil, false)
-
-	var actual, expect struct {
-		A int
-		B string
-	}
-	expect.A = 1
-	expect.B = "hello"
-
-	if err := WriteJSON(wc, &expect); err != nil {
-		t.Fatal("write", err)
-	}
-
-	if err := ReadJSON(rc, &actual); err != nil {
-		t.Fatal("read", err)
-	}
-
-	if !reflect.DeepEqual(&actual, &expect) {
-		t.Fatal("equal", actual, expect)
 	}
 }

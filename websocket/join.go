@@ -5,38 +5,73 @@
 package websocket
 
 import (
+	"fmt"
 	"io"
 	"strings"
 )
 
-// JoinMessages concatenates received messages to create a single io.Reader.
-// The string term is appended to each message. The returned reader does not
-// support concurrent calls to the Read method.
+// JoinMessages concatenates received WebSocket messages to create a single io.Reader.
+// It reads messages sequentially from the provided WebSocket connection.
+//
+// Parameters:
+//   - c: The WebSocket connection to read messages from
+//   - term: A string to append after each message (can be empty for no separator)
+//
+// The returned reader does not support concurrent calls to the Read method.
+// Each message is read completely before moving to the next message.
+// When a message is fully read, the next call to Read will fetch a new message.
 func JoinMessages(c *Conn, term string) io.Reader {
-	return &joinReader{c: c, term: term}
+	if c == nil {
+		// Return a reader that will immediately return an error
+		return &errorReader{err: fmt.Errorf("websocket: nil connection provided to JoinMessages")}
+	}
+	return &joinReader{
+		conn:      c,
+		separator: term,
+	}
 }
 
+// errorReader is a simple io.Reader that always returns the same error
+type errorReader struct {
+	err error
+}
+
+func (r *errorReader) Read(p []byte) (int, error) {
+	return 0, r.err
+}
+
+// joinReader implements io.Reader by concatenating multiple WebSocket messages
 type joinReader struct {
-	c    *Conn
-	term string
-	r    io.Reader
+	conn      *Conn     // WebSocket connection to read from
+	separator string    // String to append after each message
+	reader    io.Reader // Current message reader
 }
 
-func (r *joinReader) Read(p []byte) (int, error) {
-	if r.r == nil {
+// Read implements the io.Reader interface
+func (jr *joinReader) Read(p []byte) (int, error) {
+	// If we don't have a current reader, get the next message
+	if jr.reader == nil {
 		var err error
-		_, r.r, err = r.c.NextReader()
+		_, jr.reader, err = jr.conn.NextReader()
 		if err != nil {
-			return 0, err
+			return 0, fmt.Errorf("websocket: failed to get next message: %w", err)
 		}
-		if r.term != "" {
-			r.r = io.MultiReader(r.r, strings.NewReader(r.term))
+
+		// If a separator is specified, append it to the message
+		if jr.separator != "" {
+			jr.reader = io.MultiReader(jr.reader, strings.NewReader(jr.separator))
 		}
 	}
-	n, err := r.r.Read(p)
+
+	// Read from the current message
+	bytesRead, err := jr.reader.Read(p)
+
+	// If we've reached the end of the current message,
+	// clear the reader so we'll get a new message on the next Read call
 	if err == io.EOF {
-		err = nil
-		r.r = nil
+		jr.reader = nil
+		err = nil // Convert EOF to nil to indicate more data might be available
 	}
-	return n, err
+
+	return bytesRead, err
 }

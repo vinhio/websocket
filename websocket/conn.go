@@ -898,161 +898,181 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 
 // Read methods
 
-func (c *Conn) advanceFrame() (int, error) {
-	// 1. Skip remainder of previous frame.
-
+// skipRemainingFrame skips any remaining data in the current frame.
+// 1. Skip remainder of previous frame.
+func (c *Conn) skipRemainingFrame() error {
 	if c.readRemaining > 0 {
 		if _, err := io.CopyN(io.Discard, c.br, c.readRemaining); err != nil {
-			return noFrame, err
+			return err
 		}
 	}
+	return nil
+}
 
-	// 2. Read and parse first two bytes of frame header.
-	// To aid debugging, collect and report all errors in the first two bytes
-	// of the header.
-
-	var errors []string
-
+// readFrameHeader reads and parses the frame header.
+// It returns the frame type, final flag, mask flag, and any error encountered.
+// 2. Read and parse first two bytes of frame header.
+// To aid debugging, collect and report all errors in the first two bytes
+// of the header.
+func (c *Conn) readFrameHeader() (frameType int, final bool, mask bool, err error) {
 	p, err := c.read(2)
 	if err != nil {
-		return noFrame, err
+		return noFrame, false, false, err
 	}
 
-	frameType := int(p[0] & 0xf)
-	final := p[0]&finalBit != 0
+	frameType = int(p[0] & 0xf)
+	final = p[0]&finalBit != 0
 	rsv1 := p[0]&rsv1Bit != 0
 	rsv2 := p[0]&rsv2Bit != 0
 	rsv3 := p[0]&rsv3Bit != 0
-	mask := p[1]&maskBit != 0
+	mask = p[1]&maskBit != 0
 	_ = c.setReadRemaining(int64(p[1] & 0x7f)) // will not fail because argument is >= 0
 
+	// Handle compression
 	c.readDecompress = false
+	var errorList []string
 	if rsv1 {
 		if c.newDecompressionReader != nil {
 			c.readDecompress = true
 		} else {
-			errors = append(errors, "RSV1 set")
+			errorList = append(errorList, "RSV1 set")
 		}
 	}
 
 	if rsv2 {
-		errors = append(errors, "RSV2 set")
+		errorList = append(errorList, "RSV2 set")
 	}
 
 	if rsv3 {
-		errors = append(errors, "RSV3 set")
+		errorList = append(errorList, "RSV3 set")
 	}
 
+	// Validate frame
 	switch frameType {
 	case CloseMessage, PingMessage, PongMessage:
 		if c.readRemaining > maxControlFramePayloadSize {
-			errors = append(errors, "len > 125 for control")
+			errorList = append(errorList, "len > 125 for control")
 		}
 		if !final {
-			errors = append(errors, "FIN not set on control")
+			errorList = append(errorList, "FIN not set on control")
 		}
 	case TextMessage, BinaryMessage:
 		if !c.readFinal {
-			errors = append(errors, "data before FIN")
+			errorList = append(errorList, "data before FIN")
 		}
 		c.readFinal = final
 	case continuationFrame:
 		if c.readFinal {
-			errors = append(errors, "continuation after FIN")
+			errorList = append(errorList, "continuation after FIN")
 		}
 		c.readFinal = final
 	default:
-		errors = append(errors, "bad opcode "+strconv.Itoa(frameType))
+		errorList = append(errorList, "bad opcode "+strconv.Itoa(frameType))
 	}
 
 	if mask != c.isServer {
-		errors = append(errors, "bad MASK")
+		errorList = append(errorList, "bad MASK")
 	}
 
-	if len(errors) > 0 {
-		return noFrame, c.handleProtocolError(strings.Join(errors, ", "))
+	if len(errorList) > 0 {
+		return noFrame, false, false, c.handleProtocolError(strings.Join(errorList, ", "))
 	}
 
-	// 3. Read and parse frame length as per
-	// https://tools.ietf.org/html/rfc6455#section-5.2
-	//
-	// The length of the "Payload data", in bytes: if 0-125, that is the payload
-	// length.
-	// - If 126, the following 2 bytes interpreted as a 16-bit unsigned
-	// integer are the payload length.
-	// - If 127, the following 8 bytes interpreted as
-	// a 64-bit unsigned integer (the most significant bit MUST be 0) are the
-	// payload length. Multibyte length quantities are expressed in network byte
-	// order.
+	return frameType, final, mask, nil
+}
 
+// readFrameLength reads and parses the frame length.
+// 3. Read and parse frame length as per
+// https://tools.ietf.org/html/rfc6455#section-5.2
+//
+// The length of the "Payload data", in bytes: if 0-125, that is the payload
+// length.
+// - If 126, the following 2 bytes interpreted as a 16-bit unsigned
+// integer are the payload length.
+// - If 127, the following 8 bytes interpreted as
+// a 64-bit unsigned integer (the most significant bit MUST be 0) are the
+// payload length. Multibyte length quantities are expressed in network byte
+// order.
+func (c *Conn) readFrameLength() error {
 	switch c.readRemaining {
 	case 126:
 		p, err := c.read(2)
 		if err != nil {
-			return noFrame, err
+			return err
 		}
 
 		if err := c.setReadRemaining(int64(binary.BigEndian.Uint16(p))); err != nil {
-			return noFrame, err
+			return err
 		}
 	case 127:
 		p, err := c.read(8)
 		if err != nil {
-			return noFrame, err
+			return err
 		}
 
 		if err := c.setReadRemaining(int64(binary.BigEndian.Uint64(p))); err != nil {
-			return noFrame, err
+			return err
 		}
 	}
+	return nil
+}
 
-	// 4. Handle frame masking.
-
+// handleFrameMasking handles the masking of WebSocket frames.
+// 4. Handle frame masking.
+func (c *Conn) handleFrameMasking(mask bool) error {
 	if mask {
 		c.readMaskPos = 0
 		p, err := c.read(len(c.readMaskKey))
 		if err != nil {
-			return noFrame, err
+			return err
 		}
 		copy(c.readMaskKey[:], p)
 	}
+	return nil
+}
 
-	// 5. For text and binary messages, enforce read limit and return.
-
+// enforceReadLimit enforces the read limit for data frames.
+// Returns true if the frame should be processed, false if it should be skipped.
+// 5. For text and binary messages, enforce read limit and return.
+func (c *Conn) enforceReadLimit(frameType int) (bool, error) {
 	if frameType == continuationFrame || frameType == TextMessage || frameType == BinaryMessage {
-
 		c.readLength += c.readRemaining
-		// Don't allow readLength to overflow in the presence of a large readRemaining
-		// counter.
+		// Don't allow readLength to overflow in the presence of a large readRemaining counter.
 		if c.readLength < 0 {
-			return noFrame, ErrReadLimit
+			return false, ErrReadLimit
 		}
 
 		if c.readLimit > 0 && c.readLength > c.readLimit {
 			// Make a best effort to send a close message describing the problem.
 			_ = c.WriteControl(CloseMessage, FormatCloseMessage(CloseMessageTooBig, ""), time.Now().Add(writeWait))
-			return noFrame, ErrReadLimit
+			return false, ErrReadLimit
 		}
-
-		return frameType, nil
+		return true, nil
 	}
+	return false, nil
+}
 
-	// 6. Read control frame payload.
-
+// readControlFramePayload reads the payload of a control frame.
+// 6. Read control frame payload.
+func (c *Conn) readControlFramePayload() ([]byte, error) {
 	var payload []byte
 	if c.readRemaining > 0 {
+		var err error
 		payload, err = c.read(int(c.readRemaining))
 		_ = c.setReadRemaining(0) // will not fail because argument is >= 0
 		if err != nil {
-			return noFrame, err
+			return nil, err
 		}
 		if c.isServer {
 			maskBytes(c.readMaskKey, 0, payload)
 		}
 	}
+	return payload, nil
+}
 
-	// 7. Process control frame payload.
-
+// processControlFrame processes a control frame
+// 7. Process control frame payload.
+func (c *Conn) processControlFrame(frameType int, payload []byte) (int, error) {
 	switch frameType {
 	case PongMessage:
 		if err := c.handlePong(string(payload)); err != nil {
@@ -1080,8 +1100,48 @@ func (c *Conn) advanceFrame() (int, error) {
 		}
 		return noFrame, &CloseError{Code: closeCode, Text: closeText}
 	}
-
 	return frameType, nil
+}
+
+func (c *Conn) advanceFrame() (int, error) {
+	// 1. Skip remainder of previous frame.
+	if err := c.skipRemainingFrame(); err != nil {
+		return noFrame, err
+	}
+
+	// 2. Read and parse frame header.
+	frameType, _, mask, err := c.readFrameHeader()
+	if err != nil {
+		return noFrame, err
+	}
+
+	// 3. Read and parse frame length.
+	if err := c.readFrameLength(); err != nil {
+		return noFrame, err
+	}
+
+	// 4. Handle frame masking.
+	if err := c.handleFrameMasking(mask); err != nil {
+		return noFrame, err
+	}
+
+	// 5. For text and binary messages, enforce read limit and return.
+	isDataFrame, err := c.enforceReadLimit(frameType)
+	if err != nil {
+		return noFrame, err
+	}
+	if isDataFrame {
+		return frameType, nil
+	}
+
+	// 6. Read control frame payload.
+	payload, err := c.readControlFramePayload()
+	if err != nil {
+		return noFrame, err
+	}
+
+	// 7. Process control frame payload.
+	return c.processControlFrame(frameType, payload)
 }
 
 func (c *Conn) handleProtocolError(message string) error {
