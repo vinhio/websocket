@@ -224,25 +224,58 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  // Handle logout button click
-  logoutBtn.addEventListener('click', function() {
-    logout();
+  // The logout button now uses data attributes to show the modal
+  // No need for a click handler to show the modal
 
-    // Close WebSocket connection
-    if (window.closeWebSocketConnection) {
-      window.closeWebSocketConnection();
-    }
+  // Handle confirm logout button click
+  const confirmLogoutBtn = document.getElementById('confirmLogoutBtn');
+  if (confirmLogoutBtn) {
+    confirmLogoutBtn.addEventListener('click', function() {
+      // Hide the modal - using the data-modal-hide attribute
+      // The modal should automatically close due to the data-modal-hide attribute
+      // But we'll also try to close it programmatically as a fallback
+      const modal = document.getElementById('logoutConfirmModal');
+      if (modal) {
+        // Try different methods to hide the modal
+        if (typeof window.Flowbite !== 'undefined' && typeof window.Flowbite.Modal !== 'undefined') {
+          const modalInstance = new window.Flowbite.Modal(modal);
+          modalInstance.hide();
+        } else if (typeof window.Modal !== 'undefined') {
+          const modalInstance = new window.Modal(modal);
+          modalInstance.hide();
+        } else {
+          // Fallback: add 'hidden' class to modal
+          modal.classList.add('hidden');
+        }
+      }
 
-    // Hide chat and show login form
-    chatContainer.classList.add('hidden');
-    loginContainer.classList.remove('hidden');
+      // Perform logout
+      logout();
 
-    // Clear login form
-    document.getElementById('username').value = '';
-    document.getElementById('password').value = '';
-    loginError.classList.add('hidden');
+      // Close WebSocket connection
+      if (window.closeWebSocketConnection) {
+        window.closeWebSocketConnection();
+      }
 
-    // Clear chat log
-    document.getElementById('log').innerHTML = '';
-  });
+      // Hide chat and show login form
+      chatContainer.classList.add('hidden');
+      loginContainer.classList.remove('hidden');
+
+      // Clear login form
+      document.getElementById('username').value = '';
+      document.getElementById('password').value = '';
+      loginError.classList.add('hidden');
+
+      // Clear chat log
+      document.getElementById('log').innerHTML = '';
+    });
+  }
+
+  // Add event listeners for the cancel button and close button in the logout confirmation modal
+  // to ensure we don't switch to login page if user doesn't confirm logout
+  const cancelLogoutBtn = document.querySelector('button[data-modal-hide="logoutConfirmModal"]');
+  const closeLogoutModalBtn = document.querySelector('button.text-gray-400[data-modal-hide="logoutConfirmModal"]');
+
+  // We don't need to add any functionality here as the data-modal-hide attribute 
+  // will automatically close the modal without performing the logout action
 });
