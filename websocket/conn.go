@@ -9,8 +9,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
-	"github.com/gflydev/core/log"
-	"github.com/gflydev/core/try"
 	"io"
 	"net"
 	"strconv"
@@ -352,7 +350,14 @@ func (c *Conn) Close() error {
 	if c.conn == nil {
 		return ErrNilNetConn
 	}
-	return c.conn.Close()
+
+	// Use a local variable to avoid race condition
+	conn := c.conn
+	if conn == nil {
+		return ErrNilNetConn
+	}
+
+	return conn.Close()
 }
 
 // LocalAddr returns the local network address.
@@ -361,14 +366,13 @@ func (c *Conn) LocalAddr() net.Addr {
 		return nil
 	}
 
+	// Use a local variable to avoid race condition where c.conn becomes nil
+	// between the check above and the LocalAddr call
+	conn := c.conn
 	var addr net.Addr
-
-	// Fix issue `panic: runtime error: invalid memory address or nil pointer dereference`
-	try.Perform(func() {
-		addr = c.conn.LocalAddr()
-	}).Catch(func(e try.E) {
-		log.Warn(e)
-	})
+	if conn != nil {
+		addr = conn.LocalAddr()
+	}
 
 	return addr
 }
@@ -379,14 +383,13 @@ func (c *Conn) RemoteAddr() net.Addr {
 		return nil
 	}
 
+	// Use a local variable to avoid race condition where c.conn becomes nil
+	// between the check above and the RemoteAddr call
+	conn := c.conn
 	var addr net.Addr
-
-	// Fix issue `panic: runtime error: invalid memory address or nil pointer dereference`
-	try.Perform(func() {
-		addr = c.conn.RemoteAddr()
-	}).Catch(func(e try.E) {
-		log.Warn(e)
-	})
+	if conn != nil {
+		addr = conn.RemoteAddr()
+	}
 
 	return addr
 }
@@ -436,24 +439,30 @@ func (c *Conn) write(frameType int, deadline time.Time, buf0, buf1 []byte) error
 		return ErrNilNetConn
 	}
 
-	// Fix issue `panic: runtime error: invalid memory address or nil pointer dereference`
-	try.Perform(func() {
-		err = c.conn.SetWriteDeadline(deadline)
-	}).Catch(func(e try.E) {
-		log.Error(e)
-
-		err = errors.New("websocket: set write deadline failed")
-	})
+	// Use a local variable to avoid race condition where c.conn becomes nil
+	// between the check above and the SetWriteDeadline call
+	conn := c.conn
+	if conn != nil {
+		err = conn.SetWriteDeadline(deadline)
+	} else {
+		err = ErrNilNetConn
+	}
 
 	if err != nil {
 		return c.writeFatal(err)
 	}
 
-	if len(buf1) == 0 {
-		_, err = c.conn.Write(buf0)
+	if conn != nil {
+		if len(buf1) == 0 {
+			_, err = conn.Write(buf0)
+		} else {
+			b := net.Buffers([][]byte{buf0, buf1})
+			_, err = b.WriteTo(conn)
+		}
 	} else {
-		err = c.writeBufs(buf0, buf1)
+		err = ErrNilNetConn
 	}
+
 	if err != nil {
 		return c.writeFatal(err)
 	}
@@ -533,10 +542,17 @@ func (c *Conn) WriteControl(messageType int, data []byte, deadline time.Time) er
 		return ErrNilNetConn
 	}
 
-	if err := c.conn.SetWriteDeadline(deadline); err != nil {
+	// Use a local variable to avoid race condition where c.conn becomes nil
+	// between the check above and the actual use
+	conn := c.conn
+	if conn == nil {
+		return ErrNilNetConn
+	}
+
+	if err := conn.SetWriteDeadline(deadline); err != nil {
 		return c.writeFatal(err)
 	}
-	if _, err = c.conn.Write(buf); err != nil {
+	if _, err = conn.Write(buf); err != nil {
 		return c.writeFatal(err)
 	}
 	if messageType == CloseMessage {
@@ -1214,7 +1230,14 @@ func (c *Conn) SetReadDeadline(t time.Time) error {
 	if c.conn == nil {
 		return ErrNilNetConn
 	}
-	return c.conn.SetReadDeadline(t)
+
+	// Use a local variable to avoid race condition
+	conn := c.conn
+	if conn == nil {
+		return ErrNilNetConn
+	}
+
+	return conn.SetReadDeadline(t)
 }
 
 // SetReadLimit sets the maximum size in bytes for a message read from the peer. If a
