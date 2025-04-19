@@ -2,9 +2,12 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"github.com/gflydev/core/log"
 	"time"
-
+	"ws/data"
 	"ws/websocket"
 )
 
@@ -108,15 +111,13 @@ func (c *Client) readPump() {
 		}
 		message = bytes.TrimSpace(bytes.Replace(message, newline, space, -1))
 
-		// Check if this is a channel switch command
-		// Format: "/switch channelID"
-		// This is a special command that allows clients to switch channels without disconnecting
-		// their WebSocket connection. When a client sends this command, the server will move
-		// the client from its current hub to the specified hub, maintaining the WebSocket connection.
+		// Process the message based on its format and content
 		msgStr := string(message)
+
+		// Legacy support for the "/switch" command
 		if len(msgStr) > 8 && msgStr[:8] == "/switch " {
 			channelID := msgStr[8:]
-			log.Infof("Client %s requesting channel switch to %s", c.conn.RemoteAddr(), channelID)
+			log.Infof("Client %s requesting channel switch to %s (legacy format)", c.conn.RemoteAddr(), channelID)
 
 			// Get the hub for the specified channel or create a new one if it doesn't exist
 			hub := manager.GetHub(channelID)
@@ -125,17 +126,55 @@ func (c *Client) readPump() {
 			}
 
 			// Switch the client to the new channel without closing the WebSocket connection
-			// This is the key part of the implementation that allows clients to switch channels
-			// without disconnecting and reconnecting
 			c.SwitchChannel(hub)
 		} else {
-			// Regular message, broadcast to the current hub
-			// Prepend channel name to message if available
-			if c.hub.name != "" {
-				channelPrefix := []byte("[" + c.hub.name + "] ")
-				message = append(channelPrefix, message...)
+			// Try to parse the message as an ActionMessage first
+			var actionMsg data.ActionMessage
+			err = json.Unmarshal(message, &actionMsg)
+
+			if err == nil && actionMsg.Action.Type != "" {
+				// Process the message based on its action type
+				c.handleAction(actionMsg)
+			} else {
+				// Try to parse as legacy MessageSend format
+				var msgSend data.MessageSend
+				err = json.Unmarshal(message, &msgSend)
+
+				if err != nil {
+					// If not valid JSON, create a new message with the text content
+					msgSend = data.MessageSend{
+						Message: data.Message{
+							ID:        generateID(),
+							SenderID:  c.id,
+							Timestamp: time.Now(),
+							Type:      "text",
+							Content: data.ContentText{
+								Text: msgStr,
+							},
+							Status:    "sent",
+							Reactions: []data.Reaction{},
+						},
+					}
+				}
+
+				// Add channel information if available
+				if c.hub.name != "" {
+					// Add channel name to the message content for display purposes
+					if textContent, ok := msgSend.Message.Content.(data.ContentText); ok {
+						textContent.Text = "[" + c.hub.name + "] " + textContent.Text
+						msgSend.Message.Content = textContent
+					}
+				}
+
+				// Convert the message to JSON
+				jsonMessage, err := json.Marshal(msgSend)
+				if err != nil {
+					log.Errorf("Error marshaling message to JSON: %v", err)
+					return
+				}
+
+				c.hub.broadcast <- jsonMessage
 			}
-			c.hub.broadcast <- message
 		}
 	}
 }
@@ -249,6 +288,172 @@ func (c *Client) pongHandler(string) error {
 	return err
 }
 
+// generateID creates a random ID string for messages
+func generateID() string {
+	bytes := make([]byte, 16)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		// If random generation fails, use timestamp as fallback
+		return hex.EncodeToString([]byte(time.Now().String()))
+	}
+	return hex.EncodeToString(bytes)
+}
+
+// handleAction processes an ActionMessage based on its action type.
+// It handles various action types like switching channels, listing channels, sending messages, etc.
+//
+// Parameters:
+// - actionMsg (data.ActionMessage): The action message to process.
+func (c *Client) handleAction(actionMsg data.ActionMessage) {
+	switch actionMsg.Action.Type {
+	case data.ActionSwitchChannel:
+		// Handle channel switching
+		if switchData, ok := actionMsg.Action.Data.(map[string]interface{}); ok {
+			if channelID, ok := switchData["channel_id"].(string); ok && channelID != "" {
+				log.Infof("Client %s requesting channel switch to %s", c.conn.RemoteAddr(), channelID)
+
+				// Get the hub for the specified channel or create a new one if it doesn't exist
+				hub := manager.GetHub(channelID)
+				if hub == nil {
+					hub = manager.CreateChannelHub(channelID, channelID)
+				}
+
+				// Switch the client to the new channel
+				c.SwitchChannel(hub)
+				return
+			}
+		}
+		log.Errorf("Invalid channel switch data: %v", actionMsg.Action.Data)
+
+	case data.ActionListChannels:
+		// Handle channel listing
+		channels := make([]data.Channel, 0)
+
+		// Collect all available channels
+		for id, _ := range manager.poolHub {
+			channels = append(channels, data.Channel{
+				ID:           id,
+				Type:         "group",
+				Participants: []data.Participant{},
+				CreatedAt:    time.Now(),
+				UpdatedAt:    time.Now(),
+			})
+		}
+
+		// Create a response message
+		response := data.ActionMessage{
+			Metadata: data.Metadata{
+				Version:   "1.0",
+				Timestamp: time.Now(),
+			},
+			Action: data.Action{
+				Type: data.ActionListChannels,
+				Data: data.ChannelListData{
+					Channels: channels,
+				},
+			},
+		}
+
+		// Send the response only to the requesting client
+		jsonResponse, err := json.Marshal(response)
+		if err != nil {
+			log.Errorf("Error marshaling channel list to JSON: %v", err)
+			return
+		}
+
+		c.send <- jsonResponse
+
+	case data.ActionSendMessage:
+		// Handle message sending
+		if msgData, ok := actionMsg.Action.Data.(map[string]interface{}); ok {
+			// Extract the message from the action data
+			msgBytes, err := json.Marshal(msgData)
+			if err != nil {
+				log.Errorf("Error marshaling message data: %v", err)
+				return
+			}
+
+			var messageData data.MessageSendData
+			err = json.Unmarshal(msgBytes, &messageData)
+			if err != nil {
+				log.Errorf("Error unmarshaling message data: %v", err)
+				return
+			}
+
+			// Create a MessageSend structure
+			msgSend := data.MessageSend{
+				Metadata: actionMsg.Metadata,
+				Channel:  actionMsg.Channel,
+				Message:  messageData.Message,
+			}
+
+			// Add channel information if available
+			if c.hub.name != "" && msgSend.Message.Type == "text" {
+				if textContent, ok := msgSend.Message.Content.(map[string]interface{}); ok {
+					if text, ok := textContent["text"].(string); ok {
+						textContent["text"] = "[" + c.hub.name + "] " + text
+					}
+				}
+			}
+
+			// Convert the message to JSON
+			jsonMessage, err := json.Marshal(msgSend)
+			if err != nil {
+				log.Errorf("Error marshaling message to JSON: %v", err)
+				return
+			}
+
+			// Broadcast the message to all clients in the hub
+			c.hub.broadcast <- jsonMessage
+		}
+
+	case data.ActionCreateChannel:
+		// Handle channel creation
+		if createData, ok := actionMsg.Action.Data.(map[string]interface{}); ok {
+			if channelData, ok := createData["channel"].(map[string]interface{}); ok {
+				if channelID, ok := channelData["id"].(string); ok && channelID != "" {
+					// Create a new hub for the channel
+					_ = manager.CreateChannelHub(channelID, channelID)
+
+					// Send a confirmation message
+					response := data.ActionMessage{
+						Metadata: data.Metadata{
+							Version:   "1.0",
+							Timestamp: time.Now(),
+						},
+						Action: data.Action{
+							Type: data.ActionCreateChannel,
+							Data: data.ChannelCreateData{
+								Channel: data.Channel{
+									ID:           channelID,
+									Type:         "group",
+									Participants: []data.Participant{},
+									CreatedAt:    time.Now(),
+									UpdatedAt:    time.Now(),
+								},
+							},
+						},
+					}
+
+					jsonResponse, err := json.Marshal(response)
+					if err != nil {
+						log.Errorf("Error marshaling channel creation response to JSON: %v", err)
+						return
+					}
+
+					c.send <- jsonResponse
+					return
+				}
+			}
+		}
+		log.Errorf("Invalid channel creation data: %v", actionMsg.Action.Data)
+
+	default:
+		// For unhandled action types, just log a message
+		log.Infof("Unhandled action type: %s", actionMsg.Action.Type)
+	}
+}
+
 // SwitchChannel switches the client to a new hub without closing the WebSocket connection.
 // It unregisters the client from its current hub and registers it with the new hub.
 //
@@ -277,7 +482,26 @@ func (c *Client) SwitchChannel(newHub *Hub) {
 	// Register with a new hub
 	c.hub.register <- c
 
-	// Send a notification to the client about the channel switch
-	message := []byte("Switched to channel: " + c.hub.name)
-	c.send <- message
+	// Send a JSON notification to the client about the channel switch
+	switchMsg := data.MessageSend{
+		Message: data.Message{
+			ID:        generateID(),
+			SenderID:  "system",
+			Timestamp: time.Now(),
+			Type:      "text",
+			Content: data.ContentText{
+				Text: "Switched to channel: " + c.hub.name,
+			},
+			Status:    "sent",
+			Reactions: []data.Reaction{},
+		},
+	}
+
+	jsonMessage, err := json.Marshal(switchMsg)
+	if err != nil {
+		log.Errorf("Error marshaling channel switch notification to JSON: %v", err)
+		return
+	}
+
+	c.send <- jsonMessage
 }

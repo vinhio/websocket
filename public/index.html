@@ -8,258 +8,49 @@
     <title>gFly WebSocket</title>
     <link rel="icon" href="favicon.png"/>
 
+    <!-- TailwindCSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="tailwind-config.js"></script>
+
+    <!-- Custom styles -->
+    <link rel="stylesheet" href="styles.css">
+
+    <!-- JavaScript files -->
     <script src="websocket.js"></script>
-    <script type="text/javascript">
-      window.onload = function () {
-        let conn;
-        const msg = document.getElementById("msg");
-        const log = document.getElementById("log");
-        const channelSelect = document.getElementById("channel");
-        const currentChannel = document.getElementById("currentChannel");
-
-        function appendLog(item) {
-          const doScroll =
-                  log.scrollTop > log.scrollHeight - log.clientHeight - 1;
-          log.appendChild(item);
-          if (doScroll) {
-            log.scrollTop = log.scrollHeight - log.clientHeight;
-          }
-        }
-
-        document.getElementById("form").onsubmit = function () {
-          if (!conn) {
-            return false;
-          }
-          if (!msg.value) {
-            return false;
-          }
-          conn.send(msg.value);
-          msg.value = "";
-          return false;
-        };
-
-        // Function to connect to a specific channel
-        // This function has been improved to maintain the WebSocket connection when switching channels
-        // Instead of closing and reopening the connection, it now sends a channel switch command
-        // to the server, which allows the server to move the client to a different channel
-        // without disconnecting the WebSocket connection.
-        function connectToChannel(channel) {
-          // Update current channel display
-          currentChannel.textContent = channel || "General";
-
-          if (!conn || conn.readyState !== WebSocket.OPEN) {
-            // If no connection exists or it's not open, create a new one
-            // This happens on the initial connection or if the connection was closed
-            const wsUrl = "ws://" + document.location.host + "/ws" + (channel ? "?channel=" + encodeURIComponent(channel) : "");
-            conn = new ReconnectingWebSocket(wsUrl);
-
-            conn.onopen = function (evt) {
-                const item = document.createElement("div");
-                item.innerHTML = "<b>Connected to channel: " + (channel || "General") + "</b>";
-                appendLog(item);
-            };
-
-            conn.onclose = function (evt) {
-              const item = document.createElement("div");
-              item.innerHTML = "<b>Connection closed.</b>";
-              appendLog(item);
-            };
-
-            conn.onmessage = function (evt) {
-              const messages = evt.data.split("\n");
-              for (let i = 0; i < messages.length; i++) {
-                const item = document.createElement("div");
-                item.innerText = messages[i];
-                appendLog(item);
-              }
-            };
-          } else {
-            // If connection exists and is open, send a channel switch command
-            // This is the key improvement: instead of closing and reopening the connection,
-            // we send a command to the server to switch channels while maintaining the connection
-            conn.send("/switch " + (channel || "default"));
-
-            const item = document.createElement("div");
-            item.innerHTML = "<b>Switching to channel: " + (channel || "General") + "</b>";
-            appendLog(item);
-          }
-        }
-
-        // Handle channel selection change
-        channelSelect.addEventListener("change", function() {
-          const selectedChannel = channelSelect.value;
-          connectToChannel(selectedChannel);
-        });
-
-        // Handle new channel button click
-        document.getElementById("newChannelBtn").addEventListener("click", function() {
-          const channelName = prompt("Enter new channel name:");
-          if (channelName) {
-            // Check if the channel already exists
-            let channelExists = false;
-            for (let i = 0; i < channelSelect.options.length; i++) {
-              if (channelSelect.options[i].value === channelName) {
-                channelExists = true;
-                channelSelect.selectedIndex = i;
-                break;
-              }
-            }
-
-            // If the channel doesn't exist, add it
-            if (!channelExists) {
-              const option = document.createElement("option");
-              option.value = channelName;
-              option.text = channelName;
-              channelSelect.add(option);
-              channelSelect.value = channelName;
-            }
-
-            // Connect to the new channel
-            connectToChannel(channelName);
-          }
-        });
-
-        // Initial connection
-        if (window["WebSocket"]) {
-          // Get channel from URL if present
-          const urlParams = new URLSearchParams(window.location.search);
-          const channelParam = urlParams.get('channel');
-
-          // Set the select value if channel is in URL
-          if (channelParam) {
-            // Check if the channel exists in the dropdown
-            for (let i = 0; i < channelSelect.options.length; i++) {
-              if (channelSelect.options[i].value === channelParam) {
-                channelSelect.selectedIndex = i;
-                break;
-              }
-            }
-            // If not found, add it
-            if (channelSelect.value !== channelParam) {
-              const option = document.createElement("option");
-              option.value = channelParam;
-              option.text = channelParam;
-              channelSelect.add(option);
-              channelSelect.value = channelParam;
-            }
-          }
-
-          // Connect to the selected channel
-          connectToChannel(channelSelect.value);
-        } else {
-          const item = document.createElement("div");
-          item.innerHTML = "<b>Your browser does not support WebSockets.</b>";
-          appendLog(item);
-        }
-      };
-    </script>
-    <style>
-      html {
-        overflow: hidden;
-      }
-
-      body {
-        overflow: hidden;
-        padding: 0;
-        margin: 0;
-        width: 100%;
-        height: 100%;
-        background: gray;
-      }
-
-      #log {
-        background: white;
-        margin: 0;
-        padding: 0.5em 0.5em 0.5em 0.5em;
-        position: absolute;
-        top: 3.5em; /* Adjusted to make room for the channel selection */
-        left: 0.5em;
-        right: 0.5em;
-        bottom: 3em;
-        overflow: auto;
-      }
-
-      #channel-container {
-        position: absolute;
-        top: 0.5em;
-        left: 0.5em;
-        right: 0.5em;
-        background-color: #f0f0f0;
-        padding: 10px;
-        border-radius: 4px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      }
-
-      #form {
-        padding: 0 0.5em 0 0.5em;
-        margin: 0;
-        position: absolute;
-        bottom: 1em;
-        left: 0px;
-        width: 100%;
-        overflow: hidden;
-      }
-    </style>
+    <script src="chat.js"></script>
+    <script src="utils.js"></script>
   </head>
-  <body>
-    <div id="channel-container" style="background-color: #f0f0f0; padding: 10px; margin-bottom: 5px; display: flex; align-items: center;">
-      <label for="channel" style="margin-right: 10px;">Channel:</label>
-      <select id="channel" style="margin-right: 10px; padding: 5px;">
-        <option value="">General</option>
-        <option value="announcements">Announcements</option>
-        <option value="support">Support</option>
-        <option value="random">Random</option>
-      </select>
-      <button id="newChannelBtn" style="margin-right: 10px; padding: 5px;">New Channel</button>
-      <div style="margin-left: auto;">
-        Current Channel: <span id="currentChannel" style="font-weight: bold;">General</span>
+  <body class="bg-gray-100 text-gray-800 flex flex-col h-full">
+    <!-- Main container with flex layout -->
+    <div class="flex flex-col h-full p-2 sm:p-4 space-y-3 sm:space-y-4">
+      <!-- Channel selection header -->
+      <div id="channel-container" class="bg-white rounded-lg shadow p-3 sm:p-4 flex flex-wrap items-center gap-2 sm:gap-3">
+        <label for="channel" class="font-medium">Channel:</label>
+        <select id="channel" class="bg-white border border-gray-300 rounded-md px-2 sm:px-3 py-1 sm:py-2 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-primary">
+          <option value="">General</option>
+          <option value="announcements">Announcements</option>
+          <option value="support">Support</option>
+          <option value="random">Random</option>
+        </select>
+        <button id="newChannelBtn" class="bg-primary hover:bg-primary/90 text-white font-medium py-1 sm:py-2 px-2 sm:px-4 text-sm sm:text-base rounded-md transition-colors">
+          New Channel
+        </button>
+        <button id="listChannelsBtn" class="bg-secondary hover:bg-secondary/90 text-white font-medium py-1 sm:py-2 px-2 sm:px-4 text-sm sm:text-base rounded-md transition-colors">
+          List Channels
+        </button>
+        <div class="w-full sm:w-auto sm:ml-auto flex items-center mt-2 sm:mt-0">
+          Current Channel: <span id="currentChannel" class="font-bold ml-2">General</span>
+        </div>
       </div>
+
+      <!-- Message log area -->
+      <div id="log" class="bg-white rounded-lg shadow flex-1 overflow-y-auto p-2 sm:p-4"></div>
+
+      <!-- Message input form -->
+      <form id="form" class="flex gap-2">
+        <input type="text" id="msg" class="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-primary" autofocus placeholder="Type your message..." />
+        <input type="submit" value="Send" class="bg-primary hover:bg-primary/90 text-white font-medium py-2 px-4 sm:px-6 text-sm sm:text-base rounded-md cursor-pointer transition-colors" />
+      </form>
     </div>
-    <div id="log"></div>
-    <form id="form">
-      <input type="submit" value="Send" />
-      <label for="msg"><input type="text" id="msg" size="64" autofocus /></label>
-    </form>
-    <script type="text/javascript">
-        // Function to get query parameters from the URL
-      function getQueryParams(qs) {
-        qs = qs.split('+').join(' ');
-
-        let params = {},
-                tokens,
-                re = /[?&]?([^=]+)=([^&]*)/g;
-
-        while (tokens = re.exec(qs)) {
-          params[decodeURIComponent(tokens[1])] = decodeURIComponent(tokens[2]);
-        }
-
-        return params;
-      }
-
-        // Function to generate a random string of specified length
-      function generateRandomString(length) {
-        const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-        let result = '';
-        for (let i = 0; i < length; i++) {
-          const randomIndex = Math.floor(Math.random() * characters.length);
-          result += characters.charAt(randomIndex);
-        }
-        return result;
-      }
-
-      // Check if the URL contains the 'auto' query parameter
-      // If 'auto' is true, automatically send messages every 10 seconds
-      const query = getQueryParams(document.location.search);
-      if (query.auto === 'true') {
-        const button = document.querySelector('input[type="submit"]');
-
-        setInterval(function name(params) {
-          const msg = document.getElementById("msg");
-          msg.value = generateRandomString(50);
-
-          button.click();
-        }, 30000);
-      }
-    </script>
   </body>
 </html>
