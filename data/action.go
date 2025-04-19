@@ -23,6 +23,7 @@ const (
 	ActionUserLeave    ActionType = "user_leave"
 	ActionUserTyping   ActionType = "user_typing"
 	ActionUserPresence ActionType = "user_presence"
+	ActionUserAuth     ActionType = "user_auth"
 )
 
 // Action represents the action being performed in a WebSocket message
@@ -90,6 +91,27 @@ type UserPresenceData struct {
 
 	// Status is the new status of the user
 	Status string `json:"status"`
+}
+
+// UserAuthData contains data for user authentication
+type UserAuthData struct {
+	// Username is the user's username
+	Username string `json:"username"`
+
+	// Password is the user's password
+	Password string `json:"password"`
+}
+
+// UserAuthResponseData contains the response data for authentication
+type UserAuthResponseData struct {
+	// Success indicates whether authentication was successful
+	Success bool `json:"success"`
+
+	// Message contains any error or success message
+	Message string `json:"message"`
+
+	// Username is the authenticated username (only set if Success is true)
+	Username string `json:"username,omitempty"`
 }
 
 // ActionMessage represents a complete message payload including metadata,

@@ -42,6 +42,12 @@ type Client struct {
 
 	// Client ID for tracking across channel switches
 	id string
+
+	// Username of the authenticated user (empty if not authenticated)
+	username string
+
+	// Authentication status
+	authenticated bool
 }
 
 // readPump pumps messages from the websocket connection to the hub.
@@ -447,6 +453,67 @@ func (c *Client) handleAction(actionMsg data.ActionMessage) {
 			}
 		}
 		log.Errorf("Invalid channel creation data: %v", actionMsg.Action.Data)
+
+	case data.ActionUserAuth:
+		// Handle user authentication
+		log.Infof("Client %s requesting authentication", c.conn.RemoteAddr())
+
+		// Extract authentication data
+		authBytes, err := json.Marshal(actionMsg.Action.Data)
+		if err != nil {
+			log.Errorf("Error marshaling auth data: %v", err)
+			return
+		}
+
+		var authData data.UserAuthData
+		err = json.Unmarshal(authBytes, &authData)
+		if err != nil {
+			log.Errorf("Error unmarshaling auth data: %v", err)
+			return
+		}
+
+		// Authenticate the user
+		success := GlobalUserStore.Authenticate(authData.Username, authData.Password)
+
+		// Prepare response
+		responseData := data.UserAuthResponseData{
+			Success: success,
+		}
+
+		if success {
+			// Set authentication status on the client
+			c.username = authData.Username
+			c.authenticated = true
+
+			responseData.Message = "Authentication successful"
+			responseData.Username = authData.Username
+
+			log.Infof("Client %s authenticated as %s", c.conn.RemoteAddr(), authData.Username)
+		} else {
+			responseData.Message = "Invalid username or password"
+			log.Infof("Client %s failed authentication attempt", c.conn.RemoteAddr())
+		}
+
+		// Create response message
+		response := data.ActionMessage{
+			Metadata: data.Metadata{
+				Version:   "1.0",
+				Timestamp: time.Now(),
+			},
+			Action: data.Action{
+				Type: data.ActionUserAuth,
+				Data: responseData,
+			},
+		}
+
+		// Send the response
+		jsonResponse, err := json.Marshal(response)
+		if err != nil {
+			log.Errorf("Error marshaling auth response to JSON: %v", err)
+			return
+		}
+
+		c.send <- jsonResponse
 
 	default:
 		// For unhandled action types, just log a message
