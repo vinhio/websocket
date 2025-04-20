@@ -16,9 +16,13 @@ release:
 	# 64-bit - Linux (amd64/arm64)
 	GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(APP_NAME)-amd64-linux *.go
 
-	# Upload to server
-	scp build/app-amd64-linux root@jivecode:/root/jivepage/tmp/
-
+	# App to server
+	scp build/app-amd64-linux root@jivecode:/root/jiveim/tmp/
 	# Restart server
-	ssh root@jivecode 'cd /root/jivepage && ./restart.sh'
+	ssh root@jivecode 'cd /root/jiveim && ./restart.sh'
+
+	# Clean to server
+	ssh root@jivecode 'cd /root/jiveim/public && rm -fr * && rm -fr .*'
+	# Public to server
+	scp public/* root@jivecode:/root/jiveim/public/
 
